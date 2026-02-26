@@ -47,6 +47,18 @@ namespace AutoMosaic
             ChkFixedOutput.IsChecked = Settings.FixedOutputPath;
             ChkOpenAfterSave.IsChecked = Settings.OpenAfterSave;
             ChkGpu.IsChecked = Settings.UseGpu;
+
+            // Select overwrite mode
+            string modeTag = Settings.OverwriteMode.ToString();
+            foreach (System.Windows.Controls.ComboBoxItem item in CmbOverwrite.Items)
+            {
+                if ((string)item.Tag == modeTag)
+                {
+                    CmbOverwrite.SelectedItem = item;
+                    break;
+                }
+            }
+            if (CmbOverwrite.SelectedIndex < 0) CmbOverwrite.SelectedIndex = 0;
         }
 
         private void SaveToSettings()
@@ -72,6 +84,9 @@ namespace AutoMosaic
             Settings.FixedOutputPath = ChkFixedOutput.IsChecked == true;
             Settings.OpenAfterSave = ChkOpenAfterSave.IsChecked == true;
             Settings.UseGpu = ChkGpu.IsChecked == true;
+
+            Settings.OverwriteMode = (CmbOverwrite.SelectedItem is System.Windows.Controls.ComboBoxItem owSel
+                && int.TryParse((string)owSel.Tag, out int mode)) ? mode : 0;
         }
 
         private void SliderConf_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

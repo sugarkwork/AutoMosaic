@@ -17,9 +17,6 @@
 
   <ItemGroup>
     <Content Include="icon.ico" />
-    <Content Include="sensitive_detect_v06.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AutoMosaicCLI\AutoMosaicCLI.csproj" />
     <ProjectReference Include="..\AutoMosaicLib\AutoMosaicLib.csproj" />
   </ItemGroup>
 

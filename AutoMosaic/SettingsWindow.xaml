@@ -202,6 +202,14 @@
                 <CheckBox x:Name="ChkFixedOutput" Content="出力先を固定する（毎回聞かない）"/>
                 <CheckBox x:Name="ChkOpenAfterSave" Content="保存後にフォルダを開く" IsChecked="True"/>
                 <CheckBox x:Name="ChkGpu" Content="GPU を使用 (CUDA)"/>
+
+                <!-- Overwrite mode -->
+                <TextBlock Text="同名ファイルが存在する場合" Foreground="{StaticResource SubtextBrush}" Margin="0,12,0,4" FontSize="12"/>
+                <ComboBox x:Name="CmbOverwrite" Margin="0,0,0,6" Foreground="#FF292F42">
+                    <ComboBoxItem Content="自動リネーム（連番付与）" Tag="0"/>
+                    <ComboBoxItem Content="上書き" Tag="1"/>
+                    <ComboBoxItem Content="確認ダイアログを表示" Tag="2"/>
+                </ComboBox>
             </StackPanel>
         </ScrollViewer>
 

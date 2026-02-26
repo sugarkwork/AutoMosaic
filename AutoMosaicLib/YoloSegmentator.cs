@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using OpenCvSharp;
+using OpenCvSharp.Dnn;
 
 namespace AutoMosaicLib
 {
@@ -201,17 +202,7 @@ namespace AutoMosaicLib
 
         /// <summary>
         /// Postprocesses ONNX outputs to produce segmentation results.
-        /// Matches ultralytics process_mask logic exactly.
-        /// 
-        /// End2end model output0 layout per detection (38 values):
-        ///   [x1, y1, x2, y2, confidence, class_id, 32 mask_coefficients]
-        ///   Bounding boxes are in XYXY format (not center-format) for end2end models.
-        /// 
-        /// Mask processing (from ultralytics ops.process_mask):
-        ///   1. masks = mask_coefficients @ protos.reshape(32, -1) → reshape to (mh, mw)
-        ///   2. crop_mask(masks, bboxes * ratio)  — crop raw values to bbox in mask space
-        ///   3. F.interpolate bilinear to model input size
-        ///   4. masks.gt_(0.0)  — threshold raw values at 0 (equivalent to sigmoid > 0.5)
+        /// Handles standard YOLOv8 output format [1, 4 + num_classes + 32, 18900].
         /// </summary>
         private List<SegmentResult> Postprocess(
             Tensor<float> detections,
@@ -221,77 +212,106 @@ namespace AutoMosaicLib
             int marginBlockSize)
         {
             var results = new List<SegmentResult>();
-            int numDetections = detections.Dimensions[1]; // 300
+            
+            // Detections shape: [1, 40, 18900]
+            int numElements = detections.Dimensions[1]; // 4 + numClasses + 32
+            int numDetections = detections.Dimensions[2]; // 18900
+            int numClasses = _classNames.Length;
+            int maskOffset = 4 + numClasses;
 
             // Scale factors from model input (960x960) to original image
             float scaleX = (float)origW / InputSize;
             float scaleY = (float)origH / InputSize;
-
-            // Ratio from model input to mask proto space (960 -> 240)
             float maskRatio = (float)MaskProtoW / InputSize; // 0.25
 
-            // Count how many pass the confidence threshold
-            int aboveThreshold = 0;
-            for (int i = 0; i < numDetections; i++)
-            {
-                if (detections[0, i, 4] >= confThreshold)
-                    aboveThreshold++;
-            }
-            Console.WriteLine($"[DEBUG] Total detections: {numDetections}, above conf {confThreshold}: {aboveThreshold}");
+            var bboxes = new List<Rect>();
+            var scores = new List<float>();
+            var classIds = new List<int>();
+            var maskCoeffsList = new List<float[]>();
+            var rawBboxes = new List<Rect2f>();
 
-            int detIdx = 0;
+            // Parse raw detections
             for (int i = 0; i < numDetections; i++)
             {
-                float confidence = detections[0, i, 4];
-                if (confidence < confThreshold)
+                // Find class with highest confidence
+                float maxConf = 0;
+                int maxClassId = -1;
+                for (int c = 0; c < numClasses; c++)
+                {
+                    float conf = detections[0, 4 + c, i];
+                    if (conf > maxConf)
+                    {
+                        maxConf = conf;
+                        maxClassId = c;
+                    }
+                }
+
+                if (maxConf < confThreshold)
                     continue;
 
-                // Extract bounding box in XYXY format (end2end model output)
-                // These are in model input coordinates (960x960)
-                float bx1 = detections[0, i, 0];
-                float by1 = detections[0, i, 1];
-                float bx2 = detections[0, i, 2];
-                float by2 = detections[0, i, 3];
-                int classId = (int)detections[0, i, 5];
+                // BBox in CX, CY, W, H format
+                float cx = detections[0, 0, i];
+                float cy = detections[0, 1, i];
+                float w = detections[0, 2, i];
+                float h = detections[0, 3, i];
 
-                string className = (classId >= 0 && classId < _classNames.Length)
-                    ? _classNames[classId]
-                    : $"class_{classId}";
+                // Convert to XYXY for mask cropping later (in 960x960 space)
+                float bx1 = cx - w / 2;
+                float by1 = cy - h / 2;
+                float bx2 = cx + w / 2;
+                float by2 = cy + h / 2;
+                rawBboxes.Add(new Rect2f(bx1, by1, bx2 - bx1, by2 - by1));
 
-                Console.WriteLine($"[DEBUG] Detection {detIdx}: class={className}(id={classId}), conf={confidence:F4}, bbox_xyxy=({bx1:F1},{by1:F1},{bx2:F1},{by2:F1})");
+                // Scale to original image
+                int ox1 = (int)((cx - w / 2) * scaleX);
+                int oy1 = (int)((cy - h / 2) * scaleY);
+                int ow = (int)(w * scaleX);
+                int oh = (int)(h * scaleY);
 
-                // Scale bbox to original image coordinates
-                int ox1 = (int)(bx1 * scaleX);
-                int oy1 = (int)(by1 * scaleY);
-                int ox2 = (int)(bx2 * scaleX);
-                int oy2 = (int)(by2 * scaleY);
+                bboxes.Add(new Rect(ox1, oy1, ow, oh));
+                scores.Add(maxConf);
+                classIds.Add(maxClassId);
 
-                // Clamp to image boundaries
-                ox1 = Math.Clamp(ox1, 0, origW);
-                oy1 = Math.Clamp(oy1, 0, origH);
-                ox2 = Math.Clamp(ox2, 0, origW);
-                oy2 = Math.Clamp(oy2, 0, origH);
+                // Extract mask coefficients
+                float[] coeffs = new float[NumMaskCoeffs];
+                for (int j = 0; j < NumMaskCoeffs; j++)
+                {
+                    coeffs[j] = detections[0, maskOffset + j, i];
+                }
+                maskCoeffsList.Add(coeffs);
+            }
 
+            Console.WriteLine($"[DEBUG] Valid detections before NMS: {bboxes.Count}");
+
+            // Perform NMS
+            if (bboxes.Count == 0) return results;
+
+            CvDnn.NMSBoxes(bboxes, scores, confThreshold, nmsThreshold: 0.45f, out int[] indices);
+            Console.WriteLine($"[DEBUG] Detections after NMS: {indices.Length}");
+
+            int detIdx = 0;
+            foreach (int idx in indices)
+            {
+                int classId = classIds[idx];
+                float confidence = scores[idx];
+                string className = classId >= 0 && classId < _classNames.Length ? _classNames[classId] : $"class_{classId}";
+                Rect bbox = bboxes[idx];
+                Rect2f rawBbox = rawBboxes[idx];
+                float[] maskCoeffs = maskCoeffsList[idx];
+
+                // Bounding box in original image
+                int ox1 = Math.Clamp(bbox.X, 0, origW);
+                int oy1 = Math.Clamp(bbox.Y, 0, origH);
+                int ox2 = Math.Clamp(bbox.Right, 0, origW);
+                int oy2 = Math.Clamp(bbox.Bottom, 0, origH);
                 int bw = ox2 - ox1;
                 int bh = oy2 - oy1;
 
-                Console.WriteLine($"[DEBUG]   bbox_orig=({ox1},{oy1},{ox2},{oy2}) size={bw}x{bh}");
-
-                if (bw <= 0 || bh <= 0)
-                {
-                    Console.WriteLine($"[DEBUG]   SKIPPED: invalid bbox size");
-                    continue;
-                }
-
-                // Extract 32 mask coefficients for this detection
-                float[] maskCoeffs = new float[NumMaskCoeffs];
-                for (int c = 0; c < NumMaskCoeffs; c++)
-                {
-                    maskCoeffs[c] = detections[0, i, 6 + c];
-                }
-
+                if (bw <= 0 || bh <= 0) continue;
+                // --- Start of Mask Generation for one detection (from new NMS) ---
                 if (DebugOutputDir != null)
                 {
+                    Console.WriteLine($"[DEBUG] Detection {detIdx}: class={className}(id={classId}), conf={confidence:F4}, bbox_orig=({ox1},{oy1})-({ox2},{oy2}) size={bw}x{bh}");
                     Console.WriteLine($"[DEBUG]   maskCoeffs[0..4]: {string.Join(", ", maskCoeffs.Take(5).Select(v => v.ToString("F4")))}");
                 }
 
@@ -326,10 +346,10 @@ namespace AutoMosaicLib
 
                 // Step 2: crop_mask — zero out everything outside bbox in mask proto space
                 // This matches: crop_mask(masks, boxes=bboxes * ratios) where ratios = maskRatio
-                int cmx1 = Math.Clamp((int)(bx1 * maskRatio), 0, MaskProtoW);
-                int cmy1 = Math.Clamp((int)(by1 * maskRatio), 0, MaskProtoH);
-                int cmx2 = Math.Clamp((int)(bx2 * maskRatio), 0, MaskProtoW);
-                int cmy2 = Math.Clamp((int)(by2 * maskRatio), 0, MaskProtoH);
+                int cmx1 = Math.Clamp((int)(rawBbox.Left * maskRatio), 0, MaskProtoW);
+                int cmy1 = Math.Clamp((int)(rawBbox.Top * maskRatio), 0, MaskProtoH);
+                int cmx2 = Math.Clamp((int)(rawBbox.Right * maskRatio), 0, MaskProtoW);
+                int cmy2 = Math.Clamp((int)(rawBbox.Bottom * maskRatio), 0, MaskProtoH);
 
                 // crop_mask: zero out rows above/below and cols left/right of bbox
                 unsafe

@@ -153,6 +153,7 @@ namespace AutoMosaic
                 string fileSuffix = _settings.FileSuffix;
                 string outputFormat = _settings.OutputFormat;
                 int jpgQuality = _settings.JpgQuality;
+                int overwriteMode = _settings.OverwriteMode;
 
                 SetStatus("モデル読み込み中...");
                 ProgressPanel.Visibility = Visibility.Visible;
@@ -207,6 +208,35 @@ namespace AutoMosaic
 
                             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
 
+                            // Handle file conflict
+                            if (File.Exists(outPath))
+                            {
+                                switch (overwriteMode)
+                                {
+                                    case 0: // Auto-rename
+                                        outPath = GetUniqueFilePath(outPath);
+                                        break;
+                                    case 1: // Overwrite - do nothing
+                                        break;
+                                    case 2: // Confirm dialog
+                                        bool? doOverwrite = Dispatcher.Invoke(() =>
+                                        {
+                                            var result = System.Windows.MessageBox.Show(
+                                                $"ファイルが既に存在します。上書きしますか？\n\n{Path.GetFileName(outPath)}",
+                                                "上書き確認",
+                                                MessageBoxButton.YesNo,
+                                                MessageBoxImage.Question);
+                                            return result == MessageBoxResult.Yes;
+                                        });
+                                        if (doOverwrite != true)
+                                        {
+                                            Dispatcher.Invoke(() => Log($"  ⏭ スキップ: {Path.GetFileName(outPath)}"));
+                                            continue;
+                                        }
+                                        break;
+                                }
+                            }
+
                             var image = Cv2.ImRead(inputPath);
                             if (image.Empty())
                             {
@@ -246,8 +276,13 @@ namespace AutoMosaic
                 Log($"\n✅ 完了: {successCount}/{files.Count} ファイル → {outputDir}");
                 SetStatus("完了");
 
-                _settings.LastOutputPath = outputDir;
-                _settings.Save();
+                // Only persist outputDir if user doesn't use fixed path
+                // (auto-generated dirs from folder drops should not overwrite the setting)
+                if (!hasDirectory)
+                {
+                    _settings.LastOutputPath = outputDir;
+                    _settings.Save();
+                }
 
                 // Open folder
                 if (_settings.OpenAfterSave && _settings.FixedOutputPath && lastSavedFile != null)
@@ -282,18 +317,24 @@ namespace AutoMosaic
         /// </summary>
         private string DetermineOutputDirectory(string firstPath, bool hasDirectory)
         {
-            // Fixed output path
-            if (_settings.FixedOutputPath && !string.IsNullOrWhiteSpace(_settings.LastOutputPath))
-                return _settings.LastOutputPath;
-
-            // Directory dropped → auto-create sibling dir with suffix
+            // Directory dropped → create subfolder named "dirName + suffix"
             if (hasDirectory && Directory.Exists(firstPath))
             {
                 string dirName = Path.GetFileName(firstPath.TrimEnd(Path.DirectorySeparatorChar));
+                string subFolder = dirName + _settings.FolderSuffix;
+
+                // If fixed output path is set, create subfolder inside it
+                if (_settings.FixedOutputPath && !string.IsNullOrWhiteSpace(_settings.LastOutputPath))
+                    return Path.Combine(_settings.LastOutputPath, subFolder);
+
+                // Otherwise create sibling directory
                 string parentDir = Path.GetDirectoryName(firstPath.TrimEnd(Path.DirectorySeparatorChar)) ?? firstPath;
-                string outputDir = Path.Combine(parentDir, dirName + _settings.FolderSuffix);
-                return outputDir;
+                return Path.Combine(parentDir, subFolder);
             }
+
+            // Fixed output path for single files
+            if (_settings.FixedOutputPath && !string.IsNullOrWhiteSpace(_settings.LastOutputPath))
+                return _settings.LastOutputPath;
 
             // Single file(s) → ask user
             var dlg = new System.Windows.Forms.FolderBrowserDialog
@@ -333,5 +374,23 @@ namespace AutoMosaic
         private void SetStatus(string status) => TxtStatus.Text = status;
         private static bool IsSupportedImage(string path) =>
             SupportedExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+
+        /// <summary>
+        /// Returns a unique file path by appending _1, _2, etc. if the file already exists.
+        /// </summary>
+        private static string GetUniqueFilePath(string path)
+        {
+            string dir = Path.GetDirectoryName(path) ?? ".";
+            string baseName = Path.GetFileNameWithoutExtension(path);
+            string ext = Path.GetExtension(path);
+            int counter = 1;
+            string newPath;
+            do
+            {
+                newPath = Path.Combine(dir, $"{baseName}_{counter}{ext}");
+                counter++;
+            } while (File.Exists(newPath));
+            return newPath;
+        }
     }
 }

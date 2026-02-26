@@ -32,6 +32,9 @@ namespace AutoMosaic
         public string OutputFormat { get; set; } = "png";  // png, jpg, bmp, webp
         public int JpgQuality { get; set; } = 95;  // 1-100
 
+        // File conflict handling: 0=AutoRename, 1=Overwrite, 2=ConfirmDialog
+        public int OverwriteMode { get; set; } = 0;
+
         /// <summary>
         /// Returns selected target class names as a string array.
         /// </summary>
