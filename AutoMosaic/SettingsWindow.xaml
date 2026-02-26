@@ -1,0 +1,174 @@
+<Window x:Class="AutoMosaic.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="設定" Height="603" Width="527"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#1e1e2e" Foreground="#cdd6f4">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa"/>
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#74c7ec"/>
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#313244"/>
+        <SolidColorBrush x:Key="Surface2Brush" Color="#45475a"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#cdd6f4"/>
+        <SolidColorBrush x:Key="SubtextBrush" Color="#a6adc8"/>
+
+        <Style x:Key="AccentButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="#1e1e2e"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource AccentHoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource Surface2Brush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#585b70"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Surface2Brush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,3"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Model -->
+                <TextBlock Text="モデル" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <DockPanel Margin="0,0,0,12">
+                    <Button DockPanel.Dock="Right" Content="..." Width="30" Style="{StaticResource SecondaryButton}"
+                            Click="BrowseModel_Click" Margin="6,0,0,0"/>
+                    <TextBox x:Name="TxtModel"/>
+                </DockPanel>
+
+                <!-- Confidence -->
+                <TextBlock Text="信頼度" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <DockPanel Margin="0,0,0,12">
+                    <TextBlock DockPanel.Dock="Right" x:Name="TxtConfValue" Text="0.50"
+                               Width="35" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <Slider x:Name="SliderConf" Minimum="0.1" Maximum="1.0" Value="0.5"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True"
+                            ValueChanged="SliderConf_ValueChanged" VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <!-- Block size -->
+                <TextBlock Text="ブロックサイズ" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <DockPanel Margin="0,0,0,12">
+                    <TextBlock DockPanel.Dock="Right" x:Name="TxtBlockValue" Text="100"
+                               Width="35" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <Slider x:Name="SliderBlock" Minimum="10" Maximum="200" Value="100"
+                            TickFrequency="10" IsSnapToTickEnabled="True"
+                            ValueChanged="SliderBlock_ValueChanged" VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <!-- Target classes (checkboxes) -->
+                <TextBlock Text="対象クラス" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,6" FontSize="12"/>
+                <WrapPanel Margin="0,0,0,12">
+                    <CheckBox x:Name="ChkPussy" Content="pussy" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="ChkAnus" Content="anus" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="ChkPenis" Content="penis" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="ChkNipple" Content="nipple"/>
+                </WrapPanel>
+
+                <!-- Separator -->
+                <Border Height="1" Background="{StaticResource Surface2Brush}" Margin="0,0,0,12"/>
+
+                <!-- Output naming -->
+                <TextBlock Text="出力ファイル名" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,6" FontSize="12"/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="プレフィックス" Foreground="{StaticResource SubtextBrush}"
+                               FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Grid.Column="1" x:Name="TxtFilePrefix"/>
+                    <TextBlock Grid.Column="3" Text="サフィックス" Foreground="{StaticResource SubtextBrush}"
+                               FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Grid.Column="4" x:Name="TxtFileSuffix"/>
+                </Grid>
+
+                <TextBlock Text="出力フォルダ名サフィックス" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <TextBox x:Name="TxtFolderSuffix" Margin="0,0,0,12"/>
+
+                <!-- Separator -->
+                <Border Height="1" Background="{StaticResource Surface2Brush}" Margin="0,0,0,12"/>
+
+                <!-- Output path -->
+                <TextBlock Text="固定出力先" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <DockPanel Margin="0,0,0,12">
+                    <Button DockPanel.Dock="Right" Content="..." Width="30" Style="{StaticResource SecondaryButton}"
+                            Click="BrowseOutput_Click" Margin="6,0,0,0"/>
+                    <TextBox x:Name="TxtOutputPath"/>
+                </DockPanel>
+
+                <!-- Checkboxes -->
+                <CheckBox x:Name="ChkFixedOutput" Content="出力先を固定する（毎回聞かない）"/>
+                <CheckBox x:Name="ChkOpenAfterSave" Content="保存後にフォルダを開く" IsChecked="True"/>
+                <CheckBox x:Name="ChkGpu" Content="GPU を使用 (CUDA)"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="キャンセル" Style="{StaticResource SecondaryButton}" Click="Cancel_Click" Margin="0,0,10,0"/>
+            <Button Content="保存" Style="{StaticResource AccentButton}" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
