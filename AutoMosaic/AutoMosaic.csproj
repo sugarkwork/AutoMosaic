@@ -9,6 +9,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Platforms>AnyCPU;x64</Platforms>
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <Title>AutoMosaic</Title>
+    <Copyright>SugarKnight</Copyright>
+    <RepositoryUrl>https://github.com/sugarkwork/AutoMosaic</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +20,10 @@
     <Content Include="sensitive_detect_v06.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
 
   <ItemGroup>

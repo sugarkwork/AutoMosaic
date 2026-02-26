@@ -30,6 +30,19 @@ namespace AutoMosaic
             TxtFileSuffix.Text = Settings.FileSuffix;
             TxtFolderSuffix.Text = Settings.FolderSuffix;
 
+            // Select format in ComboBox
+            foreach (System.Windows.Controls.ComboBoxItem item in CmbFormat.Items)
+            {
+                if ((string)item.Tag == Settings.OutputFormat)
+                {
+                    CmbFormat.SelectedItem = item;
+                    break;
+                }
+            }
+            if (CmbFormat.SelectedIndex < 0) CmbFormat.SelectedIndex = 0;
+
+            SliderQuality.Value = Settings.JpgQuality;
+
             TxtOutputPath.Text = Settings.LastOutputPath;
             ChkFixedOutput.IsChecked = Settings.FixedOutputPath;
             ChkOpenAfterSave.IsChecked = Settings.OpenAfterSave;
@@ -51,6 +64,10 @@ namespace AutoMosaic
             Settings.FileSuffix = TxtFileSuffix.Text;
             Settings.FolderSuffix = TxtFolderSuffix.Text;
 
+            Settings.OutputFormat = (CmbFormat.SelectedItem is System.Windows.Controls.ComboBoxItem sel)
+                ? (string)sel.Tag : "png";
+            Settings.JpgQuality = (int)SliderQuality.Value;
+
             Settings.LastOutputPath = TxtOutputPath.Text;
             Settings.FixedOutputPath = ChkFixedOutput.IsChecked == true;
             Settings.OpenAfterSave = ChkOpenAfterSave.IsChecked == true;
@@ -65,6 +82,11 @@ namespace AutoMosaic
         private void SliderBlock_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (TxtBlockValue != null) TxtBlockValue.Text = ((int)e.NewValue).ToString();
+        }
+
+        private void SliderQuality_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (TxtQualityValue != null) TxtQualityValue.Text = ((int)e.NewValue).ToString();
         }
 
         private void BrowseModel_Click(object sender, RoutedEventArgs e)

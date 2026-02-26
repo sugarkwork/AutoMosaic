@@ -28,6 +28,10 @@ namespace AutoMosaic
         public string FileSuffix { get; set; } = "_mosaic";
         public string FolderSuffix { get; set; } = "_mosaic";
 
+        // Output format
+        public string OutputFormat { get; set; } = "png";  // png, jpg, bmp, webp
+        public int JpgQuality { get; set; } = 95;  // 1-100
+
         /// <summary>
         /// Returns selected target class names as a string array.
         /// </summary>

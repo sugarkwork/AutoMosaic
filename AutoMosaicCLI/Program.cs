@@ -31,6 +31,7 @@ class Program
         string? debugDir = null;
         string outputSuffix = "_mosaic";
         string outputFormat = "png";
+        int jpgQuality = 95;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -79,6 +80,10 @@ class Program
                 case "--format":
                     outputFormat = GetNextArg(args, ref i).TrimStart('.');
                     break;
+                case "-q":
+                case "--quality":
+                    jpgQuality = int.Parse(GetNextArg(args, ref i));
+                    break;
                 default:
                     if (inputPath == null && !args[i].StartsWith("-"))
                         inputPath = args[i];
@@ -109,6 +114,7 @@ class Program
         Console.WriteLine($"Model loaded. Classes: [{string.Join(", ", segmentator.ClassNames)}]");
         Console.WriteLine($"Target classes: [{string.Join(", ", targets)}]");
         Console.WriteLine($"Confidence: {confidence}, Block size: {blockSize}, Margin: {marginBlockSize}");
+        Console.WriteLine($"Output format: {outputFormat}, Quality: {jpgQuality}");
 
         bool isInputFile = File.Exists(inputPath);
         bool isInputDir = Directory.Exists(inputPath);
@@ -123,19 +129,19 @@ class Program
         {
             // Single file mode
             string outPath = outputPath ?? GenerateOutputPath(inputPath, outputSuffix, outputFormat);
-            return ProcessFile(segmentator, inputPath, outPath, confidence, blockSize, marginBlockSize, targets, debugDir) ? 0 : 1;
+            return ProcessFile(segmentator, inputPath, outPath, confidence, blockSize, marginBlockSize, targets, jpgQuality, debugDir) ? 0 : 1;
         }
         else
         {
             // Directory mode
             string outDir = outputPath ?? Path.Combine(inputPath, "output");
-            return ProcessDirectory(segmentator, inputPath, outDir, confidence, blockSize, marginBlockSize, targets, recursive, outputSuffix, outputFormat, debugDir);
+            return ProcessDirectory(segmentator, inputPath, outDir, confidence, blockSize, marginBlockSize, targets, recursive, outputSuffix, outputFormat, jpgQuality, debugDir);
         }
     }
 
     static bool ProcessFile(
         YoloSegmentator segmentator, string inputPath, string outputPath,
-        float confidence, int blockSize, int marginBlockSize, string[] targets, string? debugDir)
+        float confidence, int blockSize, int marginBlockSize, string[] targets, int jpgQuality, string? debugDir)
     {
         Console.WriteLine($"\nProcessing: {inputPath}");
 
@@ -163,7 +169,14 @@ class Program
         if (!string.IsNullOrEmpty(outDir))
             Directory.CreateDirectory(outDir);
 
-        Cv2.ImWrite(outputPath, output);
+        // Save with format-specific params
+        string ext = Path.GetExtension(outputPath).ToLowerInvariant();
+        if (ext == ".jpg" || ext == ".jpeg")
+            Cv2.ImWrite(outputPath, output, new ImageEncodingParam(ImwriteFlags.JpegQuality, jpgQuality));
+        else if (ext == ".webp")
+            Cv2.ImWrite(outputPath, output, new ImageEncodingParam(ImwriteFlags.WebPQuality, jpgQuality));
+        else
+            Cv2.ImWrite(outputPath, output);
         Console.WriteLine($"  Saved: {outputPath}");
 
         // Cleanup
@@ -176,7 +189,7 @@ class Program
     static int ProcessDirectory(
         YoloSegmentator segmentator, string inputDir, string outputDir,
         float confidence, int blockSize, int marginBlockSize, string[] targets,
-        bool recursive, string outputSuffix, string outputFormat, string? debugDir)
+        bool recursive, string outputSuffix, string outputFormat, int jpgQuality, string? debugDir)
     {
         var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
         var files = Directory.GetFiles(inputDir, "*.*", searchOption)
@@ -201,7 +214,7 @@ class Program
             string baseName = Path.GetFileNameWithoutExtension(relativePath);
             string outPath = Path.Combine(outputDir, relativeDir, $"{baseName}{outputSuffix}.{outputFormat}");
 
-            if (ProcessFile(segmentator, file, outPath, confidence, blockSize, marginBlockSize, targets, debugDir))
+            if (ProcessFile(segmentator, file, outPath, confidence, blockSize, marginBlockSize, targets, jpgQuality, debugDir))
                 success++;
             else
                 failed++;
@@ -244,6 +257,7 @@ OUTPUT:
                          Default: <input_name>_mosaic.png (file) or <input>/output/ (dir)
   --suffix <text>        Output filename suffix (default: _mosaic)
   --format <ext>         Output format: png, jpg, bmp, webp (default: png)
+  -q, --quality <n>      JPEG/WebP compression quality 1-100 (default: 95)
 
 MODEL:
   -m, --model <path>     Path to ONNX model file (default: sd.onnx)

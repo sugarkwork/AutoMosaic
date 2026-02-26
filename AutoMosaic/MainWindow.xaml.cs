@@ -151,10 +151,14 @@ namespace AutoMosaic
                 bool useGpu = _settings.UseGpu;
                 string filePrefix = _settings.FilePrefix;
                 string fileSuffix = _settings.FileSuffix;
+                string outputFormat = _settings.OutputFormat;
+                int jpgQuality = _settings.JpgQuality;
 
                 SetStatus("モデル読み込み中...");
-                Progress.Visibility = Visibility.Visible;
+                ProgressPanel.Visibility = Visibility.Visible;
                 Progress.IsIndeterminate = true;
+                TxtProgressDetail.Text = "モデル読み込み中...";
+                TxtProgressPercent.Text = "";
 
                 string? lastSavedFile = null;
                 int successCount = 0;
@@ -170,23 +174,26 @@ namespace AutoMosaic
                         int idx = i;
                         Dispatcher.Invoke(() =>
                         {
-                            SetStatus($"処理中 [{idx + 1}/{files.Count}]: {Path.GetFileName(inputPath)}");
+                            SetStatus($"処理中: {Path.GetFileName(inputPath)}");
                             Progress.IsIndeterminate = false;
                             Progress.Maximum = files.Count;
                             Progress.Value = idx;
+                            int pct = (int)((double)idx / files.Count * 100);
+                            TxtProgressPercent.Text = $"{pct}%";
+                            TxtProgressDetail.Text = $"{idx + 1} / {files.Count}: {Path.GetFileName(inputPath)}";
                         });
 
                         try
                         {
                             // Build output path
                             string outPath;
+                            string ext = "." + outputFormat;
                             if (fromDir)
                             {
                                 // Preserve directory structure
                                 string relativePath = Path.GetRelativePath(basePath, inputPath);
                                 string relDir = Path.GetDirectoryName(relativePath) ?? "";
                                 string baseName = Path.GetFileNameWithoutExtension(relativePath);
-                                string ext = Path.GetExtension(relativePath);
                                 string outName = $"{filePrefix}{baseName}{fileSuffix}{ext}";
                                 outPath = Path.Combine(outputDir, relDir, outName);
                             }
@@ -194,7 +201,6 @@ namespace AutoMosaic
                             {
                                 // Single file
                                 string baseName = Path.GetFileNameWithoutExtension(inputPath);
-                                string ext = Path.GetExtension(inputPath);
                                 string outName = $"{filePrefix}{baseName}{fileSuffix}{ext}";
                                 outPath = Path.Combine(outputDir, outName);
                             }
@@ -212,7 +218,14 @@ namespace AutoMosaic
                             Dispatcher.Invoke(() => Log($"  [{idx + 1}/{files.Count}] {Path.GetFileName(inputPath)} → {results.Count} 検出"));
 
                             using var output = YoloSegmentator.ApplyMosaic(image, results, blockSize: blockSize, targetClasses: targets);
-                            Cv2.ImWrite(outPath, output);
+
+                            // Save with format-specific params
+                            if (outputFormat == "jpg")
+                                Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.JpegQuality, jpgQuality));
+                            else if (outputFormat == "webp")
+                                Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.WebPQuality, jpgQuality));
+                            else
+                                Cv2.ImWrite(outPath, output);
 
                             lastSavedFile = outPath;
                             successCount++;
@@ -228,6 +241,8 @@ namespace AutoMosaic
                 });
 
                 Progress.Value = files.Count;
+                TxtProgressPercent.Text = "100%";
+                TxtProgressDetail.Text = $"完了: {successCount}/{files.Count} ファイル";
                 Log($"\n✅ 完了: {successCount}/{files.Count} ファイル → {outputDir}");
                 SetStatus("完了");
 
@@ -251,7 +266,11 @@ namespace AutoMosaic
             finally
             {
                 _isProcessing = false;
-                Progress.Visibility = Visibility.Collapsed;
+                // Keep progress visible for a moment, then hide after 3 seconds
+                _ = Task.Delay(3000).ContinueWith(_ => Dispatcher.Invoke(() =>
+                {
+                    if (!_isProcessing) ProgressPanel.Visibility = Visibility.Collapsed;
+                }));
             }
         }
 
