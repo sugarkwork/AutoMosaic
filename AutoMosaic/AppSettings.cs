@@ -13,6 +13,7 @@ namespace AutoMosaic
         public float Confidence { get; set; } = 0.5f;
         public int BlockSize { get; set; } = 100;
         public int MarginBlockSize { get; set; } = 100;
+        public float ExpandRatio { get; set; } = 0f;
         public bool UseGpu { get; set; } = false;
         public bool FixedOutputPath { get; set; } = false;
         public bool OpenAfterSave { get; set; } = true;

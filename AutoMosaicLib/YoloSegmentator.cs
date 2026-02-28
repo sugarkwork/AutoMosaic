@@ -100,7 +100,7 @@ namespace AutoMosaicLib
         /// max(originalW, originalH) / marginBlockSize. Set to 0 to disable dilation.
         /// </param>
         /// <returns>List of SegmentResult objects for each detection above the threshold.</returns>
-        public List<SegmentResult> Predict(Mat image, float confThreshold = 0.5f, int marginBlockSize = 100)
+        public List<SegmentResult> Predict(Mat image, float confThreshold = 0.5f, int marginBlockSize = 100, float expandRatio = 0f)
         {
             if (image.Empty())
                 throw new ArgumentException("Input image is empty.", nameof(image));
@@ -151,7 +151,7 @@ namespace AutoMosaicLib
             }
 
             // --- Postprocessing ---
-            return Postprocess(detectionsRaw, protoRaw, origW, origH, confThreshold, marginBlockSize);
+            return Postprocess(detectionsRaw, protoRaw, origW, origH, confThreshold, marginBlockSize, expandRatio);
         }
 
         /// <summary>
@@ -209,7 +209,8 @@ namespace AutoMosaicLib
             Tensor<float> protos,
             int origW, int origH,
             float confThreshold,
-            int marginBlockSize)
+            int marginBlockSize,
+            float expandRatio)
         {
             var results = new List<SegmentResult>();
             
@@ -406,23 +407,19 @@ namespace AutoMosaicLib
                     Cv2.ImWrite(Path.Combine(DebugOutputDir, $"03_binary_mask_det{detIdx}.png"), mask8u);
                 }
 
-                // Apply dilation for margin expansion (matching Python logic)
+                // Apply dilation for margin expansion (matching Python logic + expand-ratio feature)
                 Mat finalMask;
-                if (marginBlockSize > 0)
+                int maxSide = Math.Max(origW, origH);
+                int marginPx = (marginBlockSize > 0) ? (maxSide / marginBlockSize) : 0;
+                marginPx += (int)(maxSide * (expandRatio / 100f));
+
+                if (marginPx > 0)
                 {
-                    int marginPx = Math.Max(origW, origH) / marginBlockSize;
-                    if (marginPx > 0)
-                    {
-                        int kernelSize = marginPx * 2 + 1;
-                        Console.WriteLine($"[DEBUG]   dilation: marginPx={marginPx}, kernelSize={kernelSize}");
-                        using var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(kernelSize, kernelSize));
-                        finalMask = new Mat();
-                        Cv2.Dilate(mask8u, finalMask, kernel, iterations: 1);
-                    }
-                    else
-                    {
-                        finalMask = mask8u.Clone();
-                    }
+                    int kernelSize = marginPx * 2 + 1;
+                    Console.WriteLine($"[DEBUG]   dilation: marginPx={marginPx}, kernelSize={kernelSize}");
+                    using var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(kernelSize, kernelSize));
+                    finalMask = new Mat();
+                    Cv2.Dilate(mask8u, finalMask, kernel, iterations: 1);
                 }
                 else
                 {
@@ -544,6 +541,36 @@ namespace AutoMosaicLib
             }
 
             Console.WriteLine($"[DEBUG ApplyMosaic] Applied mosaic to {applied} region(s)");
+            return output;
+        }
+
+        /// <summary>
+        /// Convenience method: creates a composite image with mosaic applied using a pre-computed binary mask.
+        /// </summary>
+        public static Mat ApplyMosaic(Mat image, Mat mask, int blockSize = 100)
+        {
+            var output = image.Clone();
+            int longestSide = Math.Max(image.Cols, image.Rows);
+            int mosaicPixelSize = (int)Math.Ceiling((double)longestSide / blockSize);
+            if (mosaicPixelSize < 1) mosaicPixelSize = 1;
+
+            if (Cv2.CountNonZero(mask) == 0)
+                return output;
+
+            // Generate mosaic: shrink then enlarge
+            using var small = new Mat();
+            Cv2.Resize(image, small,
+                new Size(image.Cols / mosaicPixelSize, image.Rows / mosaicPixelSize),
+                interpolation: InterpolationFlags.Linear);
+
+            using var mosaiced = new Mat();
+            Cv2.Resize(small, mosaiced,
+                new Size(image.Cols, image.Rows),
+                interpolation: InterpolationFlags.Nearest);
+
+            // Apply mosaic only in the mask region
+            mosaiced.CopyTo(output, mask);
+            
             return output;
         }
 

@@ -18,6 +18,7 @@ namespace AutoMosaic
     public partial class MainWindow : System.Windows.Window
     {
         private static readonly string[] SupportedExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp" };
+        private static readonly string[] SupportedVideoExtensions = { ".mp4", ".avi", ".mkv", ".mov", ".flv" };
         private AppSettings _settings;
         private bool _isProcessing;
 
@@ -101,7 +102,7 @@ namespace AutoMosaic
 
                 foreach (var path in paths)
                 {
-                    if (File.Exists(path) && IsSupportedImage(path))
+                    if (File.Exists(path) && (IsSupportedImage(path) || IsSupportedVideo(path)))
                     {
                         files.Add((path, Path.GetDirectoryName(path)!, false));
                     }
@@ -109,7 +110,7 @@ namespace AutoMosaic
                     {
                         hasDirectory = true;
                         var dirFiles = Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
-                            .Where(IsSupportedImage)
+                            .Where(f => IsSupportedImage(f) || IsSupportedVideo(f))
                             .OrderBy(f => f);
                         foreach (var f in dirFiles)
                             files.Add((f, path, true));
@@ -148,6 +149,7 @@ namespace AutoMosaic
 
                 float conf = _settings.Confidence;
                 int blockSize = _settings.BlockSize;
+                float expandRatio = _settings.ExpandRatio;
                 bool useGpu = _settings.UseGpu;
                 string filePrefix = _settings.FilePrefix;
                 string fileSuffix = _settings.FileSuffix;
@@ -164,7 +166,7 @@ namespace AutoMosaic
                 string? lastSavedFile = null;
                 int successCount = 0;
 
-                await Task.Run(() =>
+                await Task.Run(async () =>
                 {
                     using var segmentator = new YoloSegmentator(modelPath, useGpu: useGpu);
                     Dispatcher.Invoke(() => Log($"モデル読み込み完了: [{string.Join(", ", segmentator.ClassNames)}]"));
@@ -186,9 +188,12 @@ namespace AutoMosaic
 
                         try
                         {
+                            string inputExt = Path.GetExtension(inputPath).ToLowerInvariant();
+                            bool isVideo = SupportedVideoExtensions.Contains(inputExt);
+                            
                             // Build output path
                             string outPath;
-                            string ext = "." + outputFormat;
+                            string ext = isVideo ? ".mp4" : "." + outputFormat;
                             if (fromDir)
                             {
                                 // Preserve directory structure
@@ -237,31 +242,58 @@ namespace AutoMosaic
                                 }
                             }
 
-                            var image = Cv2.ImRead(inputPath);
-                            if (image.Empty())
+                            if (isVideo)
                             {
-                                Dispatcher.Invoke(() => Log($"  ⚠ 読み込み失敗: {Path.GetFileName(inputPath)}"));
-                                continue;
+                                var processor = new VideoProcessor(
+                                    segmentator,
+                                    blockSize: blockSize,
+                                    confidence: conf,
+                                    marginBlockSize: _settings.MarginBlockSize,
+                                    expandRatio: expandRatio,
+                                    targetClasses: targets,
+                                    onProgress: (frame, total) => 
+                                    {
+                                        if (frame % 10 == 0 || frame == total)
+                                        {
+                                            Dispatcher.InvokeAsync(() => 
+                                            {
+                                                TxtProgressDetail.Text = $"{idx + 1} / {files.Count}: {Path.GetFileName(inputPath)} (Frame {frame}/{total})";
+                                            });
+                                        }
+                                    }
+                                );
+                                
+                                await processor.ProcessVideoAsync(inputPath, outPath);
+                                Dispatcher.Invoke(() => Log($"  [{idx + 1}/{files.Count}] {Path.GetFileName(inputPath)} → 動画処理完了"));
                             }
-
-                            var results = segmentator.Predict(image, confThreshold: conf, marginBlockSize: _settings.MarginBlockSize);
-                            Dispatcher.Invoke(() => Log($"  [{idx + 1}/{files.Count}] {Path.GetFileName(inputPath)} → {results.Count} 検出"));
-
-                            using var output = YoloSegmentator.ApplyMosaic(image, results, blockSize: blockSize, targetClasses: targets);
-
-                            // Save with format-specific params
-                            if (outputFormat == "jpg")
-                                Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.JpegQuality, jpgQuality));
-                            else if (outputFormat == "webp")
-                                Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.WebPQuality, jpgQuality));
                             else
-                                Cv2.ImWrite(outPath, output);
+                            {
+                                var image = Cv2.ImRead(inputPath);
+                                if (image.Empty())
+                                {
+                                    Dispatcher.Invoke(() => Log($"  ⚠ 読み込み失敗: {Path.GetFileName(inputPath)}"));
+                                    continue;
+                                }
+
+                                var results = segmentator.Predict(image, confThreshold: conf, marginBlockSize: _settings.MarginBlockSize, expandRatio: expandRatio);
+                                Dispatcher.Invoke(() => Log($"  [{idx + 1}/{files.Count}] {Path.GetFileName(inputPath)} → {results.Count} 検出"));
+
+                                using var output = YoloSegmentator.ApplyMosaic(image, results, blockSize: blockSize, targetClasses: targets);
+
+                                // Save with format-specific params
+                                if (outputFormat == "jpg")
+                                    Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.JpegQuality, jpgQuality));
+                                else if (outputFormat == "webp")
+                                    Cv2.ImWrite(outPath, output, new ImageEncodingParam(ImwriteFlags.WebPQuality, jpgQuality));
+                                else
+                                    Cv2.ImWrite(outPath, output);
+
+                                foreach (var r in results) r.Mask.Dispose();
+                                image.Dispose();
+                            }
 
                             lastSavedFile = outPath;
                             successCount++;
-
-                            foreach (var r in results) r.Mask.Dispose();
-                            image.Dispose();
                         }
                         catch (Exception ex)
                         {
@@ -374,6 +406,9 @@ namespace AutoMosaic
         private void SetStatus(string status) => TxtStatus.Text = status;
         private static bool IsSupportedImage(string path) =>
             SupportedExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+
+        private static bool IsSupportedVideo(string path) =>
+            SupportedVideoExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
 
         /// <summary>
         /// Returns a unique file path by appending _1, _2, etc. if the file already exists.

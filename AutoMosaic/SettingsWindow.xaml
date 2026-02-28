@@ -135,6 +135,16 @@
                             ValueChanged="SliderBlock_ValueChanged" VerticalAlignment="Center"/>
                 </DockPanel>
 
+                <!-- Expand Ratio -->
+                <TextBlock Text="モザイク領域の拡張率（%）" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4" FontSize="12"/>
+                <DockPanel Margin="0,0,0,12">
+                    <TextBlock DockPanel.Dock="Right" x:Name="TxtExpandValue" Text="0"
+                               Width="35" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <Slider x:Name="SliderExpand" Minimum="0" Maximum="50" Value="0"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            ValueChanged="SliderExpand_ValueChanged" VerticalAlignment="Center"/>
+                </DockPanel>
+
                 <!-- Target classes (checkboxes) -->
                 <TextBlock Text="検出対象クラス" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,6" FontSize="12"/>
                 <WrapPanel Margin="0,0,0,12">

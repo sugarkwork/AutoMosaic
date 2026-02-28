@@ -20,6 +20,7 @@ namespace AutoMosaic
             TxtModel.Text = Settings.ModelPath;
             SliderConf.Value = Settings.Confidence;
             SliderBlock.Value = Settings.BlockSize;
+            SliderExpand.Value = Settings.ExpandRatio;
 
             ChkPussy.IsChecked = Settings.TargetPussy;
             ChkAnus.IsChecked = Settings.TargetAnus;
@@ -66,6 +67,7 @@ namespace AutoMosaic
             Settings.ModelPath = TxtModel.Text;
             Settings.Confidence = (float)SliderConf.Value;
             Settings.BlockSize = (int)SliderBlock.Value;
+            Settings.ExpandRatio = (float)SliderExpand.Value;
 
             Settings.TargetPussy = ChkPussy.IsChecked == true;
             Settings.TargetAnus = ChkAnus.IsChecked == true;
@@ -97,6 +99,11 @@ namespace AutoMosaic
         private void SliderBlock_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (TxtBlockValue != null) TxtBlockValue.Text = ((int)e.NewValue).ToString();
+        }
+
+        private void SliderExpand_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (TxtExpandValue != null) TxtExpandValue.Text = ((int)e.NewValue).ToString();
         }
 
         private void SliderQuality_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

@@ -9,6 +9,7 @@ namespace AutoMosaicCLI;
 class Program
 {
     private static readonly string[] SupportedExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp" };
+    private static readonly string[] SupportedVideoExtensions = { ".mp4", ".avi", ".mkv", ".mov", ".flv" };
 
     static int Main(string[] args)
     {
@@ -25,6 +26,7 @@ class Program
         float confidence = 0.5f;
         int blockSize = 100;
         int marginBlockSize = 100;
+        float expandRatio = 0f;
         string targetClasses = "pussy,penis";
         bool recursive = false;
         bool useGpu = false;
@@ -59,6 +61,9 @@ class Program
                     break;
                 case "--margin":
                     marginBlockSize = int.Parse(GetNextArg(args, ref i));
+                    break;
+                case "--expand-ratio":
+                    expandRatio = float.Parse(GetNextArg(args, ref i));
                     break;
                 case "-t":
                 case "--target":
@@ -113,7 +118,7 @@ class Program
         segmentator.DebugOutputDir = debugDir;
         Console.WriteLine($"Model loaded. Classes: [{string.Join(", ", segmentator.ClassNames)}]");
         Console.WriteLine($"Target classes: [{string.Join(", ", targets)}]");
-        Console.WriteLine($"Confidence: {confidence}, Block size: {blockSize}, Margin: {marginBlockSize}");
+        Console.WriteLine($"Confidence: {confidence}, Block size: {blockSize}, Margin: {marginBlockSize}, Expand Ratio: {expandRatio}%");
         Console.WriteLine($"Output format: {outputFormat}, Quality: {jpgQuality}");
 
         bool isInputFile = File.Exists(inputPath);
@@ -128,20 +133,29 @@ class Program
         if (isInputFile)
         {
             // Single file mode
-            string outPath = outputPath ?? GenerateOutputPath(inputPath, outputSuffix, outputFormat);
-            return ProcessFile(segmentator, inputPath, outPath, confidence, blockSize, marginBlockSize, targets, jpgQuality, debugDir) ? 0 : 1;
+            string ext = Path.GetExtension(inputPath).ToLowerInvariant();
+            if (SupportedVideoExtensions.Contains(ext))
+            {
+                string outPath = outputPath ?? GenerateOutputPath(inputPath, outputSuffix, "mp4");
+                return ProcessVideo(segmentator, inputPath, outPath, confidence, blockSize, marginBlockSize, expandRatio, targets).GetAwaiter().GetResult() ? 0 : 1;
+            }
+            else
+            {
+                string outPath = outputPath ?? GenerateOutputPath(inputPath, outputSuffix, outputFormat);
+                return ProcessFile(segmentator, inputPath, outPath, confidence, blockSize, marginBlockSize, expandRatio, targets, jpgQuality, debugDir) ? 0 : 1;
+            }
         }
         else
         {
             // Directory mode
             string outDir = outputPath ?? Path.Combine(inputPath, "output");
-            return ProcessDirectory(segmentator, inputPath, outDir, confidence, blockSize, marginBlockSize, targets, recursive, outputSuffix, outputFormat, jpgQuality, debugDir);
+            return ProcessDirectory(segmentator, inputPath, outDir, confidence, blockSize, marginBlockSize, expandRatio, targets, recursive, outputSuffix, outputFormat, jpgQuality, debugDir);
         }
     }
 
     static bool ProcessFile(
         YoloSegmentator segmentator, string inputPath, string outputPath,
-        float confidence, int blockSize, int marginBlockSize, string[] targets, int jpgQuality, string? debugDir)
+        float confidence, int blockSize, int marginBlockSize, float expandRatio, string[] targets, int jpgQuality, string? debugDir)
     {
         Console.WriteLine($"\nProcessing: {inputPath}");
 
@@ -154,7 +168,7 @@ class Program
 
         Console.WriteLine($"  Image size: {image.Cols}x{image.Rows}");
 
-        var results = segmentator.Predict(image, confThreshold: confidence, marginBlockSize: marginBlockSize);
+        var results = segmentator.Predict(image, confThreshold: confidence, marginBlockSize: marginBlockSize, expandRatio: expandRatio);
         Console.WriteLine($"  Detections: {results.Count}");
 
         foreach (var r in results)
@@ -186,9 +200,49 @@ class Program
         return true;
     }
 
+    static async System.Threading.Tasks.Task<bool> ProcessVideo(
+        YoloSegmentator segmentator, string inputPath, string outputPath,
+        float confidence, int blockSize, int marginBlockSize, float expandRatio, string[] targets)
+    {
+        Console.WriteLine($"\nProcessing Video: {inputPath}");
+        
+        // Ensure output directory exists
+        var outDir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outDir))
+            Directory.CreateDirectory(outDir);
+
+        var processor = new VideoProcessor(
+            segmentator,
+            blockSize: blockSize,
+            confidence: confidence,
+            marginBlockSize: marginBlockSize,
+            expandRatio: expandRatio,
+            targetClasses: targets,
+            onProgress: (frame, total) => 
+            {
+                if (frame % 30 == 0 || frame == total)
+                {
+                    Console.Write($"\r  Processing frame {frame}/{total} ({(total > 0 ? (frame * 100.0 / total).ToString("F1") : "?")}%)   ");
+                }
+            }
+        );
+
+        try
+        {
+            await processor.ProcessVideoAsync(inputPath, outputPath);
+            Console.WriteLine($"\n  Saved: {outputPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"\n  Error processing video: {ex.Message}");
+            return false;
+        }
+    }
+
     static int ProcessDirectory(
         YoloSegmentator segmentator, string inputDir, string outputDir,
-        float confidence, int blockSize, int marginBlockSize, string[] targets,
+        float confidence, int blockSize, int marginBlockSize, float expandRatio, string[] targets,
         bool recursive, string outputSuffix, string outputFormat, int jpgQuality, string? debugDir)
     {
         var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
@@ -214,7 +268,7 @@ class Program
             string baseName = Path.GetFileNameWithoutExtension(relativePath);
             string outPath = Path.Combine(outputDir, relativeDir, $"{baseName}{outputSuffix}.{outputFormat}");
 
-            if (ProcessFile(segmentator, file, outPath, confidence, blockSize, marginBlockSize, targets, jpgQuality, debugDir))
+            if (ProcessFile(segmentator, file, outPath, confidence, blockSize, marginBlockSize, expandRatio, targets, jpgQuality, debugDir))
                 success++;
             else
                 failed++;
@@ -260,7 +314,7 @@ OUTPUT:
   -q, --quality <n>      JPEG/WebP compression quality 1-100 (default: 95)
 
 MODEL:
-  -m, --model <path>     Path to ONNX model file (default: sd.onnx)
+  -m, --model <path>     Path to ONNX model file (default: sensitive_detect_v06.onnx)
   --gpu                  Use GPU (CUDA) for inference
 
 DETECTION:
